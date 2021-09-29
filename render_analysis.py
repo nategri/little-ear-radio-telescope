@@ -16,11 +16,11 @@ import astropy.units as AstroUnits
 import sys
 import multiprocessing as mp
 
-WATERFALL_PLOT_MIN = -4.1
-WATERFALL_PLOT_MAX = -3.5
+WATERFALL_PLOT_MIN = -72.8
+WATERFALL_PLOT_MAX = -71.3
 
-POWER_PLOT_MIN = 74.25
-POWER_PLOT_MAX = 74.75
+POWER_PLOT_MIN = -73
+POWER_PLOT_MAX = -71
 
 class TelescopeData:
     def __init__(self, directory):
@@ -129,7 +129,7 @@ class DataRenderer:
         dbs = np.array(current_freq_data['decibels'])
         dbs_median = np.median(dbs)
         self._ax[0][0].plot(np.array(freqs) / 1.0e6, dbs, '-b', label='Spectrum')
-        self._ax[0][0].set_ylim(dbs_median - 0.5, dbs_median + 1.0)
+        self._ax[0][0].set_ylim(dbs_median - 0.5, dbs_median + 1.5)
         self._ax[0][0].set_xlabel('MHz')
         self._ax[0][0].set_ylabel('dB / Hz')
         self._ax[0][0].tick_params(labelsize=8)
@@ -137,10 +137,10 @@ class DataRenderer:
         self._ax[0][0].legend(loc='upper left')
 
         # Waterfall plot
-        waterfall_data = [np.array(x['decibels']) for x in freq_data][::-1]
+        waterfall_data = [np.array(x['decibels'][50:-50]) for x in freq_data][::-1]
         if len(waterfall_data) < DAY_OF_TIMESTEPS:
             diff = DAY_OF_TIMESTEPS - len(waterfall_data)
-            pad = [len(waterfall_data[0])*[-10.0] for _ in range(diff)]
+            pad = [len(waterfall_data[0])*[-100.0] for _ in range(diff)]
             waterfall_data += pad
         elif len(waterfall_data) > DAY_OF_TIMESTEPS:
             waterfall_data = waterfall_data[:DAY_OF_TIMESTEPS]
@@ -186,7 +186,7 @@ class DataRenderer:
 
         # Wrap up
         pyplot.tight_layout()
-        print('./render_output/'+filename.split('.')[0]+'.png')
+        print('./render_output/'+filename.split('.')[0]+'.png ' + str(ra) + ' ' + str(dec))
         pyplot.savefig('./render_output/'+filename.split('.')[0]+'.png')
 
 def mp_proc_func(dr, filename, args):
@@ -229,7 +229,7 @@ if __name__ == "__main__":
 
     filenames = sorted(os.listdir(args.data))[int(-1.5*288):]
 
-    pool = mp.Pool(1)
+    pool = mp.Pool(8)
     for fn in filenames:
         pool.apply_async(mp_proc_func, args=(data_renderer, fn, args))
     pool.close()

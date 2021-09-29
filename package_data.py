@@ -3,9 +3,7 @@ import time
 import os
 import numpy as np
 import json
-
-DECIMATION = 500
-INTEGRATION_TIME = 5*60
+import subprocess
 
 def find_raw_data_files():
     raw_files = []
@@ -16,39 +14,43 @@ def find_raw_data_files():
         dt = nowtime - mtime
         
         if (dt < 2.0) and fn[-4:] == '.dat':
-            if fn.split('_')[0] in ['spectrum', 'power']:
+            if fn.split('_')[1] in ['spectrum', 'power']:
                 raw_files.append(fn)
 
-    assert len(raw_files) == 2
+    assert len(raw_files) == 3
 
     return sorted(raw_files)
 
 def process_raw(data_dir):
-    power_filename, spectrum_filename = find_raw_data_files()
+    cal_spectrum_filename, combined_power_filename, sky_spectrum_filename = find_raw_data_files()
 
-    center_freq, samp_rate, fft_size = [int(x) for x in power_filename[:-4].split('_')[1:]]
+    center_freq, samp_rate, fft_size = [int(x) for x in combined_power_filename[:-4].split('_')[2:]]
 
-    file_lookback = int(INTEGRATION_TIME*samp_rate/(fft_size*DECIMATION))
+    power_val = np.fromfile(combined_power_filename, dtype='float32')
+    sky_spectrum_arr = np.fromfile(sky_spectrum_filename, dtype='float32')
+    cal_spectrum_arr = np.fromfile(cal_spectrum_filename, dtype='float32')
 
-    power_val = np.fromfile(power_filename, dtype='float32')[-file_lookback:]
-    spectrum_arr = np.fromfile(spectrum_filename, dtype='float32')
+    num_rows = len(sky_spectrum_arr) / fft_size
+    sky_spectrum_rows = sky_spectrum_arr.reshape(num_rows, fft_size)
+    cal_spectrum_rows = cal_spectrum_arr.reshape(num_rows, fft_size)
 
-    num_rows = len(spectrum_arr) / fft_size
-    spectrum_rows = spectrum_arr.reshape(num_rows, fft_size)[-file_lookback:]
-    sum_arr = np.array(fft_size*[0.0])
-    for x in spectrum_rows:
-        sum_arr += x
+    sky_sum_arr = np.array(fft_size*[0.0])
+    for x in sky_spectrum_rows:
+        sky_sum_arr += x
 
-    spectrum_arr = sum_arr
+    cal_sum_arr = np.array(fft_size*[0.0])
+    for x in cal_spectrum_rows:
+        cal_sum_arr += x
+
+    sky_spectrum_arr = sky_sum_arr
+    cal_spectrum_arr = cal_sum_arr
+
+    spectrum_arr = (10*np.log10(sky_sum_arr)) - (10*np.log10(cal_spectrum_arr))
+
     power_val = float(np.sum(power_val))
 
-    print(spectrum_arr)
-
-    spectrum_arr = 10*np.log10(np.abs(spectrum_arr))
-    power_val = 10*np.log10(np.abs(power_val))
-
     timestamp = datetime.datetime.fromtimestamp(
-        os.path.getmtime(spectrum_filename)
+        os.path.getmtime(sky_spectrum_filename)
     )
 
     print(timestamp.isoformat())
@@ -71,5 +73,5 @@ def process_raw(data_dir):
 if __name__ == "__main__":
 
     while True:
+        subprocess.call('python start_radio.py', shell=True)
         process_raw('./data')
-        time.sleep(5*60)
