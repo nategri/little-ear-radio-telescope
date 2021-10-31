@@ -9,6 +9,7 @@ import dateutil
 
 from astropy.time import Time as AstroTime
 from astropy.coordinates import SkyCoord as AstroSkyCoord
+from astropy.coordinates import Galactic as AstroGalactic
 from astropy.coordinates import EarthLocation as AstroEarthLocation
 from astropy.coordinates import AltAz as AstroAltAz
 import astropy.units as AstroUnits
@@ -18,9 +19,6 @@ import multiprocessing as mp
 
 WATERFALL_PLOT_MIN = -4.0
 WATERFALL_PLOT_MAX = -3.25
-
-POWER_PLOT_MIN = -3.55
-POWER_PLOT_MAX = -3.35
 
 class TelescopeData:
     def __init__(self, directory):
@@ -65,11 +63,6 @@ class DataRenderer:
     def __init__(self, data_directory):
         self._telescope_data = TelescopeData(data_directory)
         self._fig, self._ax = pyplot.subplots(nrows=2, ncols=2, figsize=(16, 8))
-        self._sky_data = np.loadtxt('neutral_hydrogen_sky.dat')
-        self._sky_data = np.flip(self._sky_data, 1)
-
-        self._ax[0][1].imshow(self._sky_data, extent=[24, 0, -90, 90], aspect='auto', interpolation='gaussian')
-        self._telescope_position_scatter = None
 
     def _azel_to_radec(self, az, el, date_string):
         # Credit to: https://github.com/0xCoto/Virgo
@@ -95,9 +88,25 @@ class DataRenderer:
         icrs_coord = sky_coord.icrs
 
         return icrs_coord.ra.hour, icrs_coord.dec.deg
-        
 
-    def render(self, filename, azel):
+    def _galactic_plane_in_radec(self):
+        ra_list = []
+        dec_list = []
+        for x in range(0, 361, 1):
+            sky_coord = AstroSkyCoord(
+                b=0.0*AstroUnits.deg,
+                l=x*AstroUnits.deg,
+                frame=AstroGalactic
+            )
+
+            icrs_coord = sky_coord.icrs
+
+            ra_list.append(icrs_coord.ra.hour)
+            dec_list.append(icrs_coord.dec.deg)
+
+        return ra_list, dec_list
+
+    def render(self, filename):
         #output_filename = filename[:-5]+'.png'
         #if os.path.isfile('./render_output/'+output_filename):
             #return
@@ -105,10 +114,10 @@ class DataRenderer:
         TIMESTEP = 5 # Minutes
         DAY_OF_TIMESTEPS = int((24*60/TIMESTEP))
 
-        azimuth, elevation = azel
-
         # Retrieve data
         freq_data, power_data = self._telescope_data.get_data_for_filename(filename)
+        azimuth = freq_data[-1]['azimuth']
+        elevation= freq_data[-1]['elevation']
         current_freq_data = freq_data[-1]
         current_date_string = freq_data[-1]['timestamp']
         print(current_date_string)
@@ -117,14 +126,11 @@ class DataRenderer:
 
         # Clear plot
         self._ax[0][0].clear()
-        #self._ax[0][1].clear()
+        self._ax[0][1].clear()
         self._ax[1][0].clear()
         self._ax[1][1].clear()
 
-        if self._telescope_position_scatter is not None:
-            self._telescope_position_scatter.remove()
-
-        self._fig.suptitle(current_date_string[:-5])
+        self._fig.suptitle(current_date_string[:-5]+'\n'+'Charge status: '+str(round(freq_data[-1]['voltage'], 2)))
 
 
         # Spectrum plot
@@ -168,18 +174,23 @@ class DataRenderer:
         # Map plot
         # Credit to: https://github.com/0xCoto/Virgo
         ra, dec = self._azel_to_radec(azimuth, elevation, current_date_string)
+        g_ra_list, g_dec_list = self._galactic_plane_in_radec()
         self._ax[0][1].set_xlabel('Right Ascension')
         self._ax[0][1].set_ylabel('Declination')
         self._ax[0][1].tick_params(labelsize=8)
-        self._telescope_position_scatter = self._ax[0][1].scatter(ra, dec, s=200, color=[0.85, 0.15, 0.16], label='Telescope')
+        self._ax[0][1].scatter(g_ra_list, g_dec_list, s=20, color='royalblue', label='Galactic Plane')
+        self._ax[0][1].scatter(ra, dec, s=200, color=[0.85, 0.15, 0.16], label='Telescope')
+        self._ax[0][1].set_facecolor('darkblue')
         self._ax[0][1].legend(loc='upper left')
+        self._ax[0][1].set_xlim(0.0, 24.0)
+        self._ax[0][1].set_ylim(-90.0, 90.0)
+        self._ax[0][1].invert_xaxis()
 
         # Power plot
         self._ax[1][1].plot(power_data[0], power_data[1], 'r-', label='Power')
         self._ax[1][1].set_xlabel('Previous 12 Hours')
         self._ax[1][1].set_ylabel('dB')
         self._ax[1][1].set_xlim(power_data[0][-1] - datetime.timedelta(days=0.5), power_data[0][-1])
-        self._ax[1][1].set_ylim(POWER_PLOT_MIN, POWER_PLOT_MAX)
         self._ax[1][1].tick_params(labelsize=8)
         for tick_label in self._ax[1][1].get_xticklabels():
             tick_label.set_ha("right")
@@ -192,8 +203,8 @@ class DataRenderer:
         print('./render_output/'+filename.split('.')[0]+'.png ' + str(ra) + ' ' + str(dec))
         pyplot.savefig('./render_output/'+filename.split('.')[0]+'.png')
 
-def mp_proc_func(dr, filename, args):
-    dr.render(filename, (args.az, args.el))
+def mp_proc_func(dr, filename):
+    dr.render(filename)
 
 if __name__ == "__main__":
 
@@ -210,22 +221,6 @@ if __name__ == "__main__":
         required=True,
         help='Data directory'
     )
-    parser.add_argument(
-        '--az',
-        metavar='DEG',
-        type=float,
-        nargs='?',
-        required=True,
-        help='Azimuth of telescope'
-    )
-    parser.add_argument(
-        '--el',
-        metavar='DEG',
-        type=float,
-        nargs='?',
-        required=True,
-        help='Elevation of telescope'
-    )
     args = parser.parse_args()
     
     data_renderer = DataRenderer(args.data)
@@ -234,6 +229,6 @@ if __name__ == "__main__":
 
     pool = mp.Pool(8)
     for fn in filenames:
-        pool.apply_async(mp_proc_func, args=(data_renderer, fn, args))
+        pool.apply_async(mp_proc_func, args=(data_renderer, fn))
     pool.close()
     pool.join()
