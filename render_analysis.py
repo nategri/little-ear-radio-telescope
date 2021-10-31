@@ -16,11 +16,11 @@ import astropy.units as AstroUnits
 import sys
 import multiprocessing as mp
 
-WATERFALL_PLOT_MIN = -72.8
-WATERFALL_PLOT_MAX = -71.3
+WATERFALL_PLOT_MIN = -4.0
+WATERFALL_PLOT_MAX = -3.25
 
-POWER_PLOT_MIN = -73
-POWER_PLOT_MAX = -71
+POWER_PLOT_MIN = -3.55
+POWER_PLOT_MAX = -3.35
 
 class TelescopeData:
     def __init__(self, directory):
@@ -45,7 +45,10 @@ class TelescopeData:
             dt = dateutil.parser.parse(data['timestamp'])
 
             t_list.append(dt)
-            p_list.append(data['power'])
+            p_list.append(
+                #data['power']
+                np.median(data['decibels'])
+            )
 
         return t_list, p_list
 
@@ -109,8 +112,8 @@ class DataRenderer:
         current_freq_data = freq_data[-1]
         current_date_string = freq_data[-1]['timestamp']
         print(current_date_string)
-        bottom_freq = current_freq_data['frequency'][50] / 1.0e6
-        top_freq = current_freq_data['frequency'][-50] / 1.0e6
+        bottom_freq = current_freq_data['frequency'][0] / 1.0e6
+        top_freq = current_freq_data['frequency'][-1] / 1.0e6
 
         # Clear plot
         self._ax[0][0].clear()
@@ -137,7 +140,7 @@ class DataRenderer:
         self._ax[0][0].legend(loc='upper left')
 
         # Waterfall plot
-        waterfall_data = [np.array(x['decibels'][50:-50]) for x in freq_data][::-1]
+        waterfall_data = [np.array(x['decibels']) for x in freq_data][::-1]
         if len(waterfall_data) < DAY_OF_TIMESTEPS:
             diff = DAY_OF_TIMESTEPS - len(waterfall_data)
             pad = [len(waterfall_data[0])*[-100.0] for _ in range(diff)]
@@ -172,7 +175,7 @@ class DataRenderer:
         self._ax[0][1].legend(loc='upper left')
 
         # Power plot
-        self._ax[1][1].plot(power_data[0], power_data[1], 'ob', markersize=2.5, label='Average Power')
+        self._ax[1][1].plot(power_data[0], power_data[1], 'r-', label='Power')
         self._ax[1][1].set_xlabel('Previous 12 Hours')
         self._ax[1][1].set_ylabel('dB')
         self._ax[1][1].set_xlim(power_data[0][-1] - datetime.timedelta(days=0.5), power_data[0][-1])
@@ -227,7 +230,7 @@ if __name__ == "__main__":
     
     data_renderer = DataRenderer(args.data)
 
-    filenames = sorted(os.listdir(args.data))[int(-1.5*288):]
+    filenames = sorted(os.listdir(args.data))[int(-4*288):]
 
     pool = mp.Pool(8)
     for fn in filenames:

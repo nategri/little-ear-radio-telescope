@@ -3,7 +3,7 @@
 ##################################################
 # GNU Radio Python Flow Graph
 # Title: Start Radio
-# Generated: Wed Sep 29 04:17:28 2021
+# Generated: Tue Oct  5 00:39:30 2021
 ##################################################
 
 
@@ -41,7 +41,7 @@ class start_radio(gr.top_block):
         ##################################################
         # Blocks
         ##################################################
-        self.iio_fmcomms2_source_0 = iio.fmcomms2_source_f32c('ip:192.168.2.1', tuning_freq, samp_rate, filter_bw, True, True, 0x8000, True, True, True, "manual", gain, "manual", gain, "A_BALANCED", '', True)
+        self.iio_fmcomms2_source_0 = iio.fmcomms2_source_f32c('ip:pluto.local', tuning_freq, samp_rate, filter_bw, True, True, 0x20000, True, True, True, "manual", gain, "manual", gain, "A_BALANCED", '', True)
         self.fft_vxx_1 = fft.fft_vcc(fft_size, True, (window.hamming(fft_size)), True, 4)
         self.fft_vxx_0 = fft.fft_vcc(fft_size, True, (window.hamming(fft_size)), True, 4)
         self.blocks_sub_xx_1 = blocks.sub_ff(1)
@@ -53,11 +53,11 @@ class start_radio(gr.top_block):
         self.blocks_head_1 = blocks.head(gr.sizeof_gr_complex*1, fft_size*int(samp_rate*time / fft_size))
         self.blocks_head_0 = blocks.head(gr.sizeof_gr_complex*1, fft_size*int(samp_rate*time / fft_size))
         self.blocks_file_sink_1 = blocks.file_sink(gr.sizeof_float*1, "combined_power_{}_{}_{}.dat".format(tuning_freq, samp_rate, fft_size), False)
-        self.blocks_file_sink_1.set_unbuffered(False)
+        self.blocks_file_sink_1.set_unbuffered(True)
         self.blocks_file_sink_0_0 = blocks.file_sink(gr.sizeof_float*fft_size, "cal_spectrum_{}_{}_{}.dat".format(tuning_freq, samp_rate, fft_size), False)
-        self.blocks_file_sink_0_0.set_unbuffered(False)
+        self.blocks_file_sink_0_0.set_unbuffered(True)
         self.blocks_file_sink_0 = blocks.file_sink(gr.sizeof_float*fft_size, "sky_spectrum_{}_{}_{}.dat".format(tuning_freq, samp_rate, fft_size), False)
-        self.blocks_file_sink_0.set_unbuffered(False)
+        self.blocks_file_sink_0.set_unbuffered(True)
         self.blocks_complex_to_mag_squared_3 = blocks.complex_to_mag_squared(1)
         self.blocks_complex_to_mag_squared_2 = blocks.complex_to_mag_squared(1)
         self.blocks_complex_to_mag_squared_1 = blocks.complex_to_mag_squared(fft_size)
