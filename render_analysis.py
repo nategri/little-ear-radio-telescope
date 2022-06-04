@@ -1,6 +1,12 @@
+import gc
+
 import argparse
 import datetime
 import scipy
+
+import matplotlib
+matplotlib.use('Agg')
+
 from matplotlib import pyplot
 import numpy as np
 import os
@@ -16,20 +22,24 @@ import astropy.units as AstroUnits
 
 import sys
 import multiprocessing as mp
+from multiprocessing.managers import BaseManager
 
-WATERFALL_PLOT_MIN = -4.0
-WATERFALL_PLOT_MAX = -3.25
+WATERFALL_PLOT_MIN = -7.5
+WATERFALL_PLOT_MAX = -5.8
 
-class TelescopeData:
+class TelescopeData(object):
     def __init__(self, directory):
         self._data = []
 
-        for fn in os.listdir(directory):
+        filenames = sorted(os.listdir(directory))
+
+        for fn in filenames:
             full_fn = '/'.join([directory, fn])
             print(full_fn)
             with open(full_fn, 'r') as file:
                 file_data = json.loads(file.read())
                 file_data['filename'] = fn
+                file_data['decibels'] = [np.half(x) for x in file_data['decibels']]
                 self._data.append(file_data)
 
         self._data = sorted(self._data, key=lambda x: x['timestamp'])
@@ -59,18 +69,17 @@ class TelescopeData:
 
         return data_subset, (self.power(data_subset))
 
-class DataRenderer:
+class DataRenderer(object):
     def __init__(self, data_directory):
         self._telescope_data = TelescopeData(data_directory)
-        self._fig, self._ax = pyplot.subplots(nrows=2, ncols=2, figsize=(16, 8))
 
     def _azel_to_radec(self, az, el, date_string):
         # Credit to: https://github.com/0xCoto/Virgo
 
         try:
-            lat = float(os.environ['RADIO_TELESCOPE_LATITUDE'])
-            lon = float(os.environ['RADIO_TELESCOPE_LONGITUDE'])
-            alt = float(os.environ['RADIO_TELESCOPE_ALTITUDE'])
+            lat = float(os.environ['RT_LAT'])
+            lon = float(os.environ['RT_LON'])
+            alt = 0.0
         except KeyError:
             print("Please set RADIO_TELESCOPE_[LATITUDE, LONGITUDE, ALTITUDE] environment variables")
             sys.exit(1)
@@ -111,6 +120,8 @@ class DataRenderer:
         #if os.path.isfile('./render_output/'+output_filename):
             #return
 
+        self._fig, self._ax = pyplot.subplots(nrows=2, ncols=2, figsize=(16, 8))
+
         TIMESTEP = 5 # Minutes
         DAY_OF_TIMESTEPS = int((24*60/TIMESTEP))
 
@@ -121,8 +132,10 @@ class DataRenderer:
         current_freq_data = freq_data[-1]
         current_date_string = freq_data[-1]['timestamp']
         print(current_date_string)
-        bottom_freq = current_freq_data['frequency'][0] / 1.0e6
-        top_freq = current_freq_data['frequency'][-1] / 1.0e6
+        #bottom_freq = current_freq_data['frequency'][0] / 1.0e6
+        #top_freq = current_freq_data['frequency'][-1] / 1.0e6
+        bottom_freq = current_freq_data['startFrequency'] / 1.0e6
+        top_freq = current_freq_data['endFrequency'] / 1.0e6
 
         # Clear plot
         self._ax[0][0].clear()
@@ -130,14 +143,22 @@ class DataRenderer:
         self._ax[1][0].clear()
         self._ax[1][1].clear()
 
-        self._fig.suptitle(current_date_string[:-5]+'\n'+'Charge status: '+str(round(freq_data[-1]['voltage'], 2)))
+        self._fig.suptitle(current_date_string[:-5])
 
 
         # Spectrum plot
-        freqs = current_freq_data['frequency']
+        #freqs = current_freq_data['frequency']
+        center_freq = current_freq_data['centerFrequency']
+        samp_rate = current_freq_data['sampleRate']
+        freqs = np.linspace(
+            center_freq - (samp_rate/2),
+            center_freq + (samp_rate/2),
+            len(current_freq_data['decibels'])
+        ).tolist()
+
         dbs = np.array(current_freq_data['decibels'])
         dbs_median = np.median(dbs)
-        self._ax[0][0].plot(np.array(freqs) / 1.0e6, dbs, '-b', label='Spectrum')
+        self._ax[0][0].plot(np.array(freqs) / 1.0e6, dbs, '-b', label='Spectrum', linewidth=0.5)
         self._ax[0][0].set_ylim(dbs_median - 0.5, dbs_median + 1.5)
         self._ax[0][0].set_xlabel('MHz')
         self._ax[0][0].set_ylabel('dB / Hz')
@@ -147,6 +168,8 @@ class DataRenderer:
 
         # Waterfall plot
         waterfall_data = [np.array(x['decibels']) for x in freq_data][::-1]
+        waterfall_len = len(waterfall_data[0])
+        waterfall_data = [x for x in waterfall_data if len(x) == waterfall_len]
         if len(waterfall_data) < DAY_OF_TIMESTEPS:
             diff = DAY_OF_TIMESTEPS - len(waterfall_data)
             pad = [len(waterfall_data[0])*[-100.0] for _ in range(diff)]
@@ -202,6 +225,10 @@ class DataRenderer:
         pyplot.tight_layout()
         print('./render_output/'+filename.split('.')[0]+'.png ' + str(ra) + ' ' + str(dec))
         pyplot.savefig('./render_output/'+filename.split('.')[0]+'.png')
+        pyplot.cla()
+        pyplot.clf()
+        pyplot.close('all')
+        gc.collect()
 
 def mp_proc_func(dr, filename):
     dr.render(filename)
@@ -222,13 +249,18 @@ if __name__ == "__main__":
         help='Data directory'
     )
     args = parser.parse_args()
+
+    BaseManager.register('DataRenderer', DataRenderer)
+    manager = BaseManager()
+    manager.start()
+    #data_renderer = DataRenderer(args.data)
     
-    data_renderer = DataRenderer(args.data)
+    shared_data_renderer = manager.DataRenderer(args.data)
 
-    filenames = sorted(os.listdir(args.data))[int(-4*288):]
+    filenames = sorted(os.listdir(args.data))[int(-288):]
 
-    pool = mp.Pool(8)
+    pool = mp.Pool(6)
     for fn in filenames:
-        pool.apply_async(mp_proc_func, args=(data_renderer, fn))
+        pool.apply_async(mp_proc_func, args=(shared_data_renderer, fn))
     pool.close()
     pool.join()
