@@ -1,6 +1,7 @@
 import datetime
 import time
 import os
+import sys
 import numpy as np
 import json
 import subprocess
@@ -15,7 +16,7 @@ def find_raw_data_files():
         mtime = os.path.getmtime(fn)
         dt = nowtime - mtime
         
-        if (dt < 10.0) and fn[-4:] == '.dat':
+        if (dt < 40.0) and fn[-4:] == '.dat':
             if fn.split('_')[1] in ['spectrum']:
                 raw_files.append(fn)
 
@@ -43,7 +44,23 @@ def read_voltage():
     return np.median(val_list)
 
 def process_raw(data_dir):
-    cal_spectrum_filename, sky_spectrum_filename = find_raw_data_files()
+    try:
+        cal_spectrum_filename, sky_spectrum_filename = find_raw_data_files()
+    except AssertionError:
+        return
+    
+    sdr_temp = None
+    fpga_temp = None
+
+    try:
+        temp_string = subprocess.check_output('bash pluto_temp.sh ip:192.168.2.1', shell=True)
+        print(temp_string.split())
+        sdr_temp = float(temp_string.split()[5])
+        fpga_temp = float(temp_string.split()[8])
+        print("SDR Temp: {} C".format(sdr_temp))
+        print("FPGA Temp: {} C".format(fpga_temp))
+    except:
+        pass
 
     center_freq, samp_rate, fft_size = [int(x) for x in sky_spectrum_filename[:-4].split('_')[2:]]
 
@@ -51,7 +68,8 @@ def process_raw(data_dir):
     sky_spectrum_arr = np.fromfile(sky_spectrum_filename, dtype='float32')
     cal_spectrum_arr = np.fromfile(cal_spectrum_filename, dtype='float32')
 
-    num_rows = len(sky_spectrum_arr) / fft_size
+    num_rows = int(len(sky_spectrum_arr) / fft_size)
+
     sky_spectrum_rows = sky_spectrum_arr.reshape(num_rows, fft_size)
     cal_spectrum_rows = cal_spectrum_arr.reshape(num_rows, fft_size)
 
@@ -66,8 +84,10 @@ def process_raw(data_dir):
     sky_spectrum_arr = sky_sum_arr
     cal_spectrum_arr = cal_sum_arr
 
-    #spectrum_arr = (10*np.log10(sky_sum_arr)) - (10*np.log10(cal_spectrum_arr))
-    spectrum_arr = (10*np.log10(sky_sum_arr))
+    spectrum_arr = 1*((10*np.log10(sky_sum_arr)) - (10*np.log10(cal_spectrum_arr)))
+    #spectrum_arr = (10*np.log10(sky_sum_arr))
+    cal_arr = (10*np.log10(cal_spectrum_arr))
+    sky_arr = (10*np.log10(sky_sum_arr))
 
     #power_val = np.sum(power_val)
     #power_val = np.median(power_val)
@@ -97,10 +117,14 @@ def process_raw(data_dir):
         'centerFrequency': center_freq,
         'sampleRate': samp_rate,
         'decibels': [np.round(x, 3) for x in spectrum_arr.tolist()],
+        'calDecibels': [np.round(x, 3) for x in cal_arr.tolist()],
+        'skyDecibels': [np.round(x, 3) for x in sky_arr.tolist()],
         #'power': float(power_val),
-        'voltage': read_voltage(),
+        #'voltage': read_voltage(),
         'elevation': args.el,
-        'azimuth': args.az
+        'azimuth': args.az,
+        'sdrTemp': sdr_temp,
+        'fgpaTemp': fpga_temp,
     }
 
     filename = timestamp.strftime('%Y%m%d%H%M%S')
@@ -143,15 +167,17 @@ if __name__ == "__main__":
         #if read_voltage() > 13.5:
         if True:
             if args.continuum:
-                rcode = subprocess.call('python start_radio.py --filter-bw=2000000 --samp-rate 2000000 --tuning-freq 1390000000 --time 300', shell=True)
+                rcode = subprocess.call('python3 start_radio.py --filter-bw=2000000 --samp-rate 1310720 --fft-size 131072 --tuning-freq 1390000000 --time 120', shell=True)
             else:
                 #rcode = subprocess.call('python start_radio.py --filter-bw=2000000 --samp-rate 2000000 --fft-size 256 --tuning-freq 1422500000 --time=300', shell=True)
                 #rcode = subprocess.call('python start_radio.py --filter-bw=2000000 --samp-rate 2000000 --fft-size 256 --tuning-freq 1420400575 --time=300', shell=True)
-                rcode = subprocess.call('python start_radio.py --filter-bw=2000000 --samp-rate 1310720 --fft-size 131072 --tuning-freq 1420400575 --time=300', shell=True)
+                #time.sleep(5)
+                rcode = subprocess.call('python3 start_radio.py --filter-bw=2000000 --samp-rate 1310720 --fft-size 131072 --tuning-freq 1420400575 --time=120', shell=True)
             if rcode != 0:
-                print("Caught non-zero exit code for acquisition process: Rebooting in 120 seconds.")
-                time.sleep(120)
-                os.system('sudo reboot')
+                #print("Caught non-zero exit code for acquisition process: Rebooting in 120 seconds.")
+                print("Oopsy fucko retrying")
+                time.sleep(10)
+                #os.system('sudo reboot')
             process_raw('./data')
         else:
             subprocess.call('python radio_power.py off', shell=True)

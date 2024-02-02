@@ -25,13 +25,20 @@ RUN apt update && \
 	qtbase5-dev \
 	clang-format \
 	dbus-x11 \
-        libavahi-client-dev \
+	libiio-utils \
+  libavahi-client-dev \
 	gnuradio \
 	inetutils-ping 
+
+RUN pip install astropy
+RUN pip install pybaselines
 
 ENV DISPLAY host.docker.internal:0
 ENV GRC_BLOCKS_PATH /usr/local/share/gnuradio/grc/blocks
 ENV PYTHONPATH /usr/local/lib/python3/dist-packages/
+
+ENV RT_LON -122.45898
+ENV RT_LAT 45.41762
 
 RUN mkdir -p /root/radio-telescope
 WORKDIR /root/radio-telescope
