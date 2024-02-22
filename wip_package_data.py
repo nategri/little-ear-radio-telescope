@@ -102,6 +102,9 @@ def process_raw(data_dir):
             len(spectrum_arr)
     ).tolist()
 
+    with open('temperature_reading.json', 'r') as f:
+        lna_temp_data = json.loads(f.read())
+
     print("Data recorded: "+timestamp.isoformat())
 
     data = {
@@ -125,6 +128,7 @@ def process_raw(data_dir):
         'azimuth': args.az,
         'sdrTemp': sdr_temp,
         'fgpaTemp': fpga_temp,
+        'lnaTemp': lna_temp_data
     }
 
     filename = timestamp.strftime('%Y%m%d%H%M%S')
@@ -167,12 +171,12 @@ if __name__ == "__main__":
         #if read_voltage() > 13.5:
         if True:
             if args.continuum:
-                rcode = subprocess.call('python3 start_radio.py --filter-bw=2000000 --samp-rate 1310720 --fft-size 131072 --tuning-freq 1390000000 --time 120', shell=True)
+                rcode = subprocess.call('python3 start_radio.py --filter-bw=2000000 --samp-rate 1310720 --fft-size 131072 --tuning-freq 1390000000 --time 300', shell=True)
             else:
                 #rcode = subprocess.call('python start_radio.py --filter-bw=2000000 --samp-rate 2000000 --fft-size 256 --tuning-freq 1422500000 --time=300', shell=True)
                 #rcode = subprocess.call('python start_radio.py --filter-bw=2000000 --samp-rate 2000000 --fft-size 256 --tuning-freq 1420400575 --time=300', shell=True)
                 #time.sleep(5)
-                rcode = subprocess.call('python3 start_radio.py --filter-bw=2000000 --samp-rate 1310720 --fft-size 131072 --tuning-freq 1420400575 --time=120', shell=True)
+                rcode = subprocess.call('python3 start_radio.py --filter-bw=2000000 --samp-rate 1310720 --fft-size 131072 --tuning-freq 1420400575 --time=300', shell=True)
             if rcode != 0:
                 #print("Caught non-zero exit code for acquisition process: Rebooting in 120 seconds.")
                 print("Oopsy fucko retrying")

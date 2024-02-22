@@ -32,20 +32,21 @@ REDUCE_FACTOR = 128
 
 def bin_val(a):
     mean = np.mean(a)
+    median = np.median(a)
     sigma = np.std(a)
+    max_val = np.max(a) 
 
-    return np.median(a)
+    return mean
 
-    if np.max(a) > (mean + 5*sigma):
-        #return np.max(a)
-        return mean
+    if (max_val > (mean + 5*sigma)) and (max_val < mean + 100*sigma):
+        return np.max(a)
     else:
         return mean
 
 def assemble_telescope_dict(directory):
     data = []
 
-    filenames = sorted(os.listdir(directory))[-2*288:]
+    filenames = sorted(os.listdir(directory))[-4*288:]
 
     for fn in filenames:
         full_fn = '/'.join([directory, fn])
@@ -53,11 +54,40 @@ def assemble_telescope_dict(directory):
         with open(full_fn, 'r') as file:
             file_data = json.loads(file.read())
             file_data['filename'] = fn
-            file_data['decibels'] = (np.array([file_data['skyDecibels']]) - np.array([file_data['calDecibels']]))
-            file_data['decibels'] = [bin_val(x) for x in file_data['decibels'].reshape(-1, REDUCE_FACTOR)]
-            file_data['sky'] = [np.array([bin_val(x) for x in file_data['skyDecibels']]).reshape(-1, REDUCE_FACTOR)]
+            file_data['decibels'] = np.array(file_data['skyDecibels']) - np.array(file_data['calDecibels'])
+            #file_data['decibels'] = [bin_val(x) for x in file_data['decibels'].reshape(-1, REDUCE_FACTOR)]
+            #print(len(file_data['decibels']))
+            #print(file_data['decibels'])
+            file_data['sky'] = np.array(file_data['skyDecibels'])
+            file_data['sky'] = [bin_val(x) for x in file_data['sky'].reshape(-1, REDUCE_FACTOR)][200:-200]
+            file_data['sky'] = np.array(file_data['skyDecibels'])
+            file_data['sky'] = [bin_val(x) for x in file_data['sky'].reshape(-1, REDUCE_FACTOR)][200:-200]
             #file_data['decibels'] = np.array([np.half(x) for x in file_data['decibels']])
             #del file_data['decibels']
+
+            """
+            file_data['decibels'][509] = (file_data['decibels'][508] + file_data['decibels'][515]) / 2
+            file_data['decibels'][510] = file_data['decibels'][509]
+            file_data['decibels'][511] = file_data['decibels'][509]
+            file_data['decibels'][512] = file_data['decibels'][509]
+            file_data['decibels'][513] = file_data['decibels'][509]
+            file_data['decibels'][514] = file_data['decibels'][509]
+            """
+
+            """
+            # Computer baseline (aggregate coeffs later)
+            center_freq = file_data['centerFrequency']
+            samp_rate = file_data['sampleRate']
+            x = np.linspace(
+                center_freq - (samp_rate/2),
+                center_freq + (samp_rate/2),
+                len(file_data['decibels'])
+            )
+            y = file_data['decibels']
+            bg, parms = pybaselines.polynomial.modpoly(y, x, poly_order=5, return_coef=True)
+            file_data['coeffs'] = list(parms['coef'])
+            """
+
             del file_data['skyDecibels']
             del file_data['calDecibels']
             data.append(file_data)
@@ -78,12 +108,13 @@ def baseline_correction(data):
     center_freq = data[min_idx]['centerFrequency']
     samp_rate = data[min_idx]['sampleRate']
 
-    """
     x = np.linspace(
         center_freq - (samp_rate/2),
         center_freq + (samp_rate/2),
         len(data[min_idx]['decibels'])
     )
+
+    """
     y = data[min_idx]['decibels']
 
     bg, parms = pybaselines.polynomial.modpoly(y, x, poly_order=3, return_coef=True)
@@ -93,10 +124,25 @@ def baseline_correction(data):
         d['power'] = parms['coef'][0]
     """
 
-    for d in data:
-        center_freq = d['centerFrequency']
-        samp_rate = d['sampleRate']
+    """
+    def f(z, c):
+        r = 0.0
+        for i in range(len(c)):
+            r += c[i]*np.power(z, i)
+        return r
 
+    coeffs = np.array([0.0]*len(data[0]['coeffs']))
+    for d in data:
+        coeffs += np.array(d['coeffs'])
+    coeffs = coeffs / len(data)
+
+    bg = [f(z, coeffs) for z in x]
+    """
+
+    for d in data:
+        #center_freq = d['centerFrequency']
+        #samp_rate = d['sampleRate']
+        
         x = np.linspace(
             center_freq - (samp_rate/2),
             center_freq + (samp_rate/2),
@@ -104,11 +150,13 @@ def baseline_correction(data):
         )
         y = d['decibels']
 
-        bg, parms = pybaselines.polynomial.imodpoly(y, x, poly_order=3, return_coef=True)
+        bg, parms = pybaselines.polynomial.imodpoly(y, x, poly_order=5, return_coef=True)
 
-        d['power'] = np.median(d['sky'])
+        d['power'] = np.median(d['decibels'])
+        #d['power'] = np.median(d['decibels'])
         #d['power'] = parms['coef'][0]
         d['decibels'] = np.array(d['decibels']) - np.array(bg)
+        #d['decibels'] = d['sky']
 
     WATERFALL_PLOT_MIN = np.median(data[-1]['decibels']) - 0.15
     WATERFALL_PLOT_MAX = np.median(data[-1]['decibels']) + 0.5
@@ -192,7 +240,7 @@ def render(td, filename):
 
     _fig, _ax = pyplot.subplots(nrows=2, ncols=2, figsize=(16, 8))
 
-    TIMESTEP = 2 # Minutes
+    TIMESTEP = 5 # Minutes
     DAY_OF_TIMESTEPS = int((24*60/TIMESTEP))
 
     # Retrieve data
@@ -296,8 +344,8 @@ def render(td, filename):
 
     # Wrap up
     pyplot.tight_layout()
-    print('./render_output/'+filename.split('.')[0]+'.png ' + str(ra) + ' ' + str(dec))
     pyplot.savefig('./render_output/'+filename.split('.')[0]+'.png')
+    print('./render_output/'+filename.split('.')[0]+'.png ' + str(ra) + ' ' + str(dec))
     pyplot.cla()
     pyplot.clf()
     pyplot.close('all')
@@ -329,7 +377,8 @@ if __name__ == "__main__":
     manager = mp.Manager()
     shared_telescope_data = manager.list(telescope_data)
 
-    filenames = sorted(os.listdir(args.data))[int(-288):]
+    #filenames = sorted(os.listdir(args.data))[int(-288):]
+    filenames = sorted(os.listdir(args.data))[int(-4*288):]
     #filenames = sorted(os.listdir(args.data))
     #render(shared_telescope_data, filenames[0])
 
