@@ -27,6 +27,7 @@ RUN apt update && \
 	dbus-x11 \
 	libiio-utils \
   libavahi-client-dev \
+  gr-osmosdr \
 	gnuradio \
 	inetutils-ping 
 

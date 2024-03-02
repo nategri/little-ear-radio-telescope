@@ -54,7 +54,7 @@ def assemble_telescope_dict(directory):
         with open(full_fn, 'r') as file:
             file_data = json.loads(file.read())
             file_data['filename'] = fn
-            file_data['decibels'] = np.array(file_data['skyDecibels']) - np.array(file_data['calDecibels'])
+            file_data['decibels'] = -1*(np.array(file_data['skyDecibels']) - np.array(file_data['calDecibels']))
             #file_data['decibels'] = [bin_val(x) for x in file_data['decibels'].reshape(-1, REDUCE_FACTOR)]
             #print(len(file_data['decibels']))
             #print(file_data['decibels'])
@@ -74,7 +74,6 @@ def assemble_telescope_dict(directory):
             file_data['decibels'][514] = file_data['decibels'][509]
             """
 
-            """
             # Computer baseline (aggregate coeffs later)
             center_freq = file_data['centerFrequency']
             samp_rate = file_data['sampleRate']
@@ -86,77 +85,40 @@ def assemble_telescope_dict(directory):
             y = file_data['decibels']
             bg, parms = pybaselines.polynomial.modpoly(y, x, poly_order=5, return_coef=True)
             file_data['coeffs'] = list(parms['coef'])
-            """
+            file_data['power'] = np.median(file_data['decibels'])
+            #d['power'] = parms['coef'][0]
+            file_data['decibels'] = np.array(file_data['decibels']) - np.array(bg)
 
-            del file_data['skyDecibels']
-            del file_data['calDecibels']
+            #del file_data['skyDecibels']
+            #del file_data['calDecibels']
             data.append(file_data)
 
-    WATERFALL_PLOT_MIN = np.median(data[-1]['decibels']) - 0.25
-    WATERFALL_PLOT_MAX = np.median(data[-1]['decibels']) + 0.2
+    # Remove narrow band RFI
+    summed_spectrum = sum([d['decibels'] for d in data])
+    med_summed_spectrum = np.median(summed_spectrum)
+    std_summed_spectrum = np.std(summed_spectrum)
+    rfi_i = []
+    for i in range(len(summed_spectrum)):
+        if summed_spectrum[i] > (std_summed_spectrum + (3*std_summed_spectrum)) or \
+           summed_spectrum[i] < (std_summed_spectrum - (3*std_summed_spectrum)):
+            rfi_i.append(i)
 
     for d in data:
-        d['waterfall_min'] = WATERFALL_PLOT_MIN
-        d['waterfall_max'] = WATERFALL_PLOT_MAX
+        for j in range(20, len(d['decibels'])-20):
+            if j in rfi_i:
+                #d['decibels'][j] = (d['decibels'][j-3] + d['decibels'][j+3])/2
+                x_subset = []
+                y_subset = []
+                for k in range(j-8, j+7):
+                    if k not in rfi_i:
+                        x_subset.append(k)
+                        y_subset.append(d['decibels'][k])
 
-    return data
+                coeffs = np.polyfit(x_subset, y_subset, 3)
+                fit_func = np.poly1d(coeffs)
+                d['decibels'][j] = fit_func(j)
 
-def baseline_correction(data):
-    spectra_averages = [np.mean(x['decibels']) for x in data]
-    min_idx = np.argmin(spectra_averages)
-
-    center_freq = data[min_idx]['centerFrequency']
-    samp_rate = data[min_idx]['sampleRate']
-
-    x = np.linspace(
-        center_freq - (samp_rate/2),
-        center_freq + (samp_rate/2),
-        len(data[min_idx]['decibels'])
-    )
-
-    """
-    y = data[min_idx]['decibels']
-
-    bg, parms = pybaselines.polynomial.modpoly(y, x, poly_order=3, return_coef=True)
-
-    for d in data:
-        d['decibels'] = np.array(d['decibels'] - np.array(bg))
-        d['power'] = parms['coef'][0]
-    """
-
-    """
-    def f(z, c):
-        r = 0.0
-        for i in range(len(c)):
-            r += c[i]*np.power(z, i)
-        return r
-
-    coeffs = np.array([0.0]*len(data[0]['coeffs']))
-    for d in data:
-        coeffs += np.array(d['coeffs'])
-    coeffs = coeffs / len(data)
-
-    bg = [f(z, coeffs) for z in x]
-    """
-
-    for d in data:
-        #center_freq = d['centerFrequency']
-        #samp_rate = d['sampleRate']
-        
-        x = np.linspace(
-            center_freq - (samp_rate/2),
-            center_freq + (samp_rate/2),
-            len(d['decibels'])
-        )
-        y = d['decibels']
-
-        bg, parms = pybaselines.polynomial.imodpoly(y, x, poly_order=5, return_coef=True)
-
-        d['power'] = np.median(d['decibels'])
-        #d['power'] = np.median(d['decibels'])
-        #d['power'] = parms['coef'][0]
-        d['decibels'] = np.array(d['decibels']) - np.array(bg)
-        #d['decibels'] = d['sky']
+                
 
     WATERFALL_PLOT_MIN = np.median(data[-1]['decibels']) - 0.15
     WATERFALL_PLOT_MAX = np.median(data[-1]['decibels']) + 0.5
@@ -164,6 +126,10 @@ def baseline_correction(data):
     for d in data:
         d['waterfall_min'] = WATERFALL_PLOT_MIN
         d['waterfall_max'] = WATERFALL_PLOT_MAX
+
+
+    return data
+
 
 def power_for_list(data_list, agg_func=np.average):
 
@@ -331,15 +297,26 @@ def render(td, filename):
     _ax[0][1].invert_xaxis()
 
     # Power plot
-    _ax[1][1].plot(power_data[0], power_data[1], 'r-', label='Power?')
+    cal_power = np.array([np.median(x['calDecibels']) for x in freq_data])
+    sky_power = np.array([np.median(x['skyDecibels']) for x in freq_data])
+    _ax[1][1].plot(power_data[0], power_data[1], 'r-', label='Sky - Cal')
+    #_ax[1][1].plot(power_data[0], -cal_power, 'g-', label='Cal Power')
+    #_ax[1][1].plot(power_data[0], -sky_power, 'b-', label='Sky Power?')
     _ax[1][1].set_xlabel('Previous 12 Hours')
-    _ax[1][1].set_ylabel('Order-0 Spectrum BG Fit Term')
+    _ax[1][1].set_ylabel('Power')
     _ax[1][1].set_xlim(power_data[0][-1] - datetime.timedelta(days=0.5), power_data[0][-1])
     _ax[1][1].tick_params(labelsize=8)
     for tick_label in _ax[1][1].get_xticklabels():
         tick_label.set_ha("right")
         tick_label.set_rotation(30)
     _ax[1][1].legend(loc='upper left')
+
+    ax11_r = _ax[1][1].twinx()
+    ax11_r.set_ylabel('Temperature [C]')
+    temp_data_v = [x['lnaTemp']['temp'] for x in freq_data]
+    temp_data_t = [dateutil.parser.parse(x['lnaTemp']['timestamp']) for x in freq_data]
+    ax11_r.plot(temp_data_t, temp_data_v, 'k.', label='LNA Temp')
+    ax11_r.legend(loc='upper right')
 
 
     # Wrap up
@@ -372,7 +349,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     telescope_data = assemble_telescope_dict(args.data)
-    baseline_correction(telescope_data)
+    #baseline_correction(telescope_data)
 
     manager = mp.Manager()
     shared_telescope_data = manager.list(telescope_data)

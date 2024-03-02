@@ -102,8 +102,12 @@ def process_raw(data_dir):
             len(spectrum_arr)
     ).tolist()
 
-    with open('temperature_reading.json', 'r') as f:
-        lna_temp_data = json.loads(f.read())
+    lna_temp_data = None
+    try:
+        with open('temperature_reading.json', 'r') as f:
+            lna_temp_data = json.loads(f.read())
+    except:
+        pass
 
     print("Data recorded: "+timestamp.isoformat())
 
@@ -176,7 +180,7 @@ if __name__ == "__main__":
                 #rcode = subprocess.call('python start_radio.py --filter-bw=2000000 --samp-rate 2000000 --fft-size 256 --tuning-freq 1422500000 --time=300', shell=True)
                 #rcode = subprocess.call('python start_radio.py --filter-bw=2000000 --samp-rate 2000000 --fft-size 256 --tuning-freq 1420400575 --time=300', shell=True)
                 #time.sleep(5)
-                rcode = subprocess.call('python3 start_radio.py --filter-bw=2000000 --samp-rate 1310720 --fft-size 131072 --tuning-freq 1420400575 --time=300', shell=True)
+                rcode = subprocess.call('python3 start_radio.py --filter-bw=2000000 --samp-rate 1310720 --fft-size 1024 --tuning-freq 1420400575 --int-time=300', shell=True)
             if rcode != 0:
                 #print("Caught non-zero exit code for acquisition process: Rebooting in 120 seconds.")
                 print("Oopsy fucko retrying")

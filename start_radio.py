@@ -18,14 +18,15 @@ import signal
 from argparse import ArgumentParser
 from gnuradio.eng_arg import eng_float, intx
 from gnuradio import eng_notation
-from gnuradio import iio
+import osmosdr
+import time
 
 
 
 
 class start_radio(gr.top_block):
 
-    def __init__(self, fft_size=512, filter_bw=20000000, gain=32, samp_rate=2000000, time=150, tuning_freq=1420405752):
+    def __init__(self, fft_size=512, filter_bw=20000000, gain=64, int_time=150, samp_rate=2000000, tuning_freq=1420405752):
         gr.top_block.__init__(self, "Start Radio", catch_exceptions=True)
 
         ##################################################
@@ -34,8 +35,8 @@ class start_radio(gr.top_block):
         self.fft_size = fft_size
         self.filter_bw = filter_bw
         self.gain = gain
+        self.int_time = int_time
         self.samp_rate = samp_rate
-        self.time = time
         self.tuning_freq = tuning_freq
 
         ##################################################
@@ -46,28 +47,44 @@ class start_radio(gr.top_block):
         ##################################################
         # Blocks
         ##################################################
-        self.iio_fmcomms2_source_0 = iio.fmcomms2_source_fc32('ip:192.168.2.1', [True, True, True, True], 0x20000)
-        self.iio_fmcomms2_source_0.set_len_tag_key('packet_len')
-        self.iio_fmcomms2_source_0.set_frequency(tuning_freq)
-        self.iio_fmcomms2_source_0.set_samplerate(samp_rate)
-        if True:
-            self.iio_fmcomms2_source_0.set_gain_mode(0, 'manual')
-            self.iio_fmcomms2_source_0.set_gain(0, gain)
-        if True:
-            self.iio_fmcomms2_source_0.set_gain_mode(1, 'manual')
-            self.iio_fmcomms2_source_0.set_gain(1, gain)
-        self.iio_fmcomms2_source_0.set_quadrature(True)
-        self.iio_fmcomms2_source_0.set_rfdc(True)
-        self.iio_fmcomms2_source_0.set_bbdc(True)
-        self.iio_fmcomms2_source_0.set_filter_params('Auto', '', 0, 0)
+        self.osmosdr_source_0_0 = osmosdr.source(
+            args="numchan=" + str(1) + " " + "rtl_tcp=host.docker.internal:5001"
+        )
+        self.osmosdr_source_0_0.set_time_unknown_pps(osmosdr.time_spec_t())
+        self.osmosdr_source_0_0.set_sample_rate(samp_rate)
+        self.osmosdr_source_0_0.set_center_freq(tuning_freq, 0)
+        self.osmosdr_source_0_0.set_freq_corr(0, 0)
+        self.osmosdr_source_0_0.set_dc_offset_mode(0, 0)
+        self.osmosdr_source_0_0.set_iq_balance_mode(0, 0)
+        self.osmosdr_source_0_0.set_gain_mode(False, 0)
+        self.osmosdr_source_0_0.set_gain(44.5, 0)
+        self.osmosdr_source_0_0.set_if_gain(20, 0)
+        self.osmosdr_source_0_0.set_bb_gain(20, 0)
+        self.osmosdr_source_0_0.set_antenna('', 0)
+        self.osmosdr_source_0_0.set_bandwidth(0, 0)
+        self.osmosdr_source_0 = osmosdr.source(
+            args="numchan=" + str(1) + " " + "rtl_tcp=host.docker.internal:5000"
+        )
+        self.osmosdr_source_0.set_time_unknown_pps(osmosdr.time_spec_t())
+        self.osmosdr_source_0.set_sample_rate(samp_rate)
+        self.osmosdr_source_0.set_center_freq(tuning_freq, 0)
+        self.osmosdr_source_0.set_freq_corr(0, 0)
+        self.osmosdr_source_0.set_dc_offset_mode(0, 0)
+        self.osmosdr_source_0.set_iq_balance_mode(0, 0)
+        self.osmosdr_source_0.set_gain_mode(False, 0)
+        self.osmosdr_source_0.set_gain(44.5, 0)
+        self.osmosdr_source_0.set_if_gain(20, 0)
+        self.osmosdr_source_0.set_bb_gain(20, 0)
+        self.osmosdr_source_0.set_antenna('', 0)
+        self.osmosdr_source_0.set_bandwidth(0, 0)
         self.fft_vxx_1 = fft.fft_vcc(fft_size, True, window.hamming(fft_size), True, 4)
         self.fft_vxx_0 = fft.fft_vcc(fft_size, True, window.hamming(fft_size), True, 4)
         self.blocks_stream_to_vector_1 = blocks.stream_to_vector(gr.sizeof_gr_complex*1, fft_size)
         self.blocks_stream_to_vector_0 = blocks.stream_to_vector(gr.sizeof_gr_complex*1, fft_size)
         self.blocks_integrate_xx_1_0_0 = blocks.integrate_ff(decimation, fft_size)
         self.blocks_integrate_xx_1_0 = blocks.integrate_ff(decimation, fft_size)
-        self.blocks_head_1 = blocks.head(gr.sizeof_gr_complex*1, fft_size*int(samp_rate*time / fft_size))
-        self.blocks_head_0 = blocks.head(gr.sizeof_gr_complex*1, fft_size*int(samp_rate*time / fft_size))
+        self.blocks_head_1 = blocks.head(gr.sizeof_gr_complex*1, fft_size*int(samp_rate*int_time / fft_size))
+        self.blocks_head_0 = blocks.head(gr.sizeof_gr_complex*1, fft_size*int(samp_rate*int_time / fft_size))
         self.blocks_file_sink_0_0 = blocks.file_sink(gr.sizeof_float*fft_size, "cal_spectrum_{}_{}_{}.dat".format(tuning_freq, samp_rate, fft_size), False)
         self.blocks_file_sink_0_0.set_unbuffered(True)
         self.blocks_file_sink_0 = blocks.file_sink(gr.sizeof_float*fft_size, "sky_spectrum_{}_{}_{}.dat".format(tuning_freq, samp_rate, fft_size), False)
@@ -89,8 +106,8 @@ class start_radio(gr.top_block):
         self.connect((self.blocks_stream_to_vector_1, 0), (self.fft_vxx_0, 0))
         self.connect((self.fft_vxx_0, 0), (self.blocks_complex_to_mag_squared_0, 0))
         self.connect((self.fft_vxx_1, 0), (self.blocks_complex_to_mag_squared_1, 0))
-        self.connect((self.iio_fmcomms2_source_0, 0), (self.blocks_head_0, 0))
-        self.connect((self.iio_fmcomms2_source_0, 1), (self.blocks_head_1, 0))
+        self.connect((self.osmosdr_source_0, 0), (self.blocks_head_0, 0))
+        self.connect((self.osmosdr_source_0_0, 0), (self.blocks_head_1, 0))
 
 
     def get_fft_size(self):
@@ -100,8 +117,8 @@ class start_radio(gr.top_block):
         self.fft_size = fft_size
         self.blocks_file_sink_0.open("sky_spectrum_{}_{}_{}.dat".format(self.tuning_freq, self.samp_rate, self.fft_size))
         self.blocks_file_sink_0_0.open("cal_spectrum_{}_{}_{}.dat".format(self.tuning_freq, self.samp_rate, self.fft_size))
-        self.blocks_head_0.set_length(self.fft_size*int(self.samp_rate*self.time / self.fft_size))
-        self.blocks_head_1.set_length(self.fft_size*int(self.samp_rate*self.time / self.fft_size))
+        self.blocks_head_0.set_length(self.fft_size*int(self.samp_rate*self.int_time / self.fft_size))
+        self.blocks_head_1.set_length(self.fft_size*int(self.samp_rate*self.int_time / self.fft_size))
 
     def get_filter_bw(self):
         return self.filter_bw
@@ -114,8 +131,14 @@ class start_radio(gr.top_block):
 
     def set_gain(self, gain):
         self.gain = gain
-        self.iio_fmcomms2_source_0.set_gain(0, self.gain)
-        self.iio_fmcomms2_source_0.set_gain(1, self.gain)
+
+    def get_int_time(self):
+        return self.int_time
+
+    def set_int_time(self, int_time):
+        self.int_time = int_time
+        self.blocks_head_0.set_length(self.fft_size*int(self.samp_rate*self.int_time / self.fft_size))
+        self.blocks_head_1.set_length(self.fft_size*int(self.samp_rate*self.int_time / self.fft_size))
 
     def get_samp_rate(self):
         return self.samp_rate
@@ -124,17 +147,10 @@ class start_radio(gr.top_block):
         self.samp_rate = samp_rate
         self.blocks_file_sink_0.open("sky_spectrum_{}_{}_{}.dat".format(self.tuning_freq, self.samp_rate, self.fft_size))
         self.blocks_file_sink_0_0.open("cal_spectrum_{}_{}_{}.dat".format(self.tuning_freq, self.samp_rate, self.fft_size))
-        self.blocks_head_0.set_length(self.fft_size*int(self.samp_rate*self.time / self.fft_size))
-        self.blocks_head_1.set_length(self.fft_size*int(self.samp_rate*self.time / self.fft_size))
-        self.iio_fmcomms2_source_0.set_samplerate(self.samp_rate)
-
-    def get_time(self):
-        return self.time
-
-    def set_time(self, time):
-        self.time = time
-        self.blocks_head_0.set_length(self.fft_size*int(self.samp_rate*self.time / self.fft_size))
-        self.blocks_head_1.set_length(self.fft_size*int(self.samp_rate*self.time / self.fft_size))
+        self.blocks_head_0.set_length(self.fft_size*int(self.samp_rate*self.int_time / self.fft_size))
+        self.blocks_head_1.set_length(self.fft_size*int(self.samp_rate*self.int_time / self.fft_size))
+        self.osmosdr_source_0.set_sample_rate(self.samp_rate)
+        self.osmosdr_source_0_0.set_sample_rate(self.samp_rate)
 
     def get_tuning_freq(self):
         return self.tuning_freq
@@ -143,7 +159,8 @@ class start_radio(gr.top_block):
         self.tuning_freq = tuning_freq
         self.blocks_file_sink_0.open("sky_spectrum_{}_{}_{}.dat".format(self.tuning_freq, self.samp_rate, self.fft_size))
         self.blocks_file_sink_0_0.open("cal_spectrum_{}_{}_{}.dat".format(self.tuning_freq, self.samp_rate, self.fft_size))
-        self.iio_fmcomms2_source_0.set_frequency(self.tuning_freq)
+        self.osmosdr_source_0.set_center_freq(self.tuning_freq, 0)
+        self.osmosdr_source_0_0.set_center_freq(self.tuning_freq, 0)
 
     def get_decimation(self):
         return self.decimation
@@ -162,14 +179,14 @@ def argument_parser():
         "--filter-bw", dest="filter_bw", type=intx, default=20000000,
         help="Set filter_bw [default=%(default)r]")
     parser.add_argument(
-        "--gain", dest="gain", type=eng_float, default=eng_notation.num_to_str(float(32)),
+        "--gain", dest="gain", type=eng_float, default=eng_notation.num_to_str(float(64)),
         help="Set gain [default=%(default)r]")
+    parser.add_argument(
+        "--int-time", dest="int_time", type=intx, default=150,
+        help="Set int_time [default=%(default)r]")
     parser.add_argument(
         "--samp-rate", dest="samp_rate", type=intx, default=2000000,
         help="Set samp_rate [default=%(default)r]")
-    parser.add_argument(
-        "--time", dest="time", type=intx, default=150,
-        help="Set time [default=%(default)r]")
     parser.add_argument(
         "--tuning-freq", dest="tuning_freq", type=intx, default=1420405752,
         help="Set tuning_freq [default=%(default)r]")
@@ -179,7 +196,7 @@ def argument_parser():
 def main(top_block_cls=start_radio, options=None):
     if options is None:
         options = argument_parser().parse_args()
-    tb = top_block_cls(fft_size=options.fft_size, filter_bw=options.filter_bw, gain=options.gain, samp_rate=options.samp_rate, time=options.time, tuning_freq=options.tuning_freq)
+    tb = top_block_cls(fft_size=options.fft_size, filter_bw=options.filter_bw, gain=options.gain, int_time=options.int_time, samp_rate=options.samp_rate, tuning_freq=options.tuning_freq)
 
     def sig_handler(sig=None, frame=None):
         tb.stop()
